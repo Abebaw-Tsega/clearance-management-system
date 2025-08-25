@@ -1,9 +1,30 @@
 const express = require('express');
 const router = express.Router();
+const { approveRequest, getPendingRequests } = require('../controller/staffs');
 const { authenticateToken } = require('../middleware/auth');
-const { getPendingRequests, takeActionOnRequest } = require('../controller/staffs');
 
-router.get('/requests', authenticateToken(['dormitory', 'department_head', 'librarian', 'cafeteria', 'sport', 'student_affair', 'registrar']), getPendingRequests);
-router.put('/requests/:request_id/action', authenticateToken(['dormitory', 'department_head', 'librarian', 'cafeteria', 'sport', 'student_affair', 'registrar']), takeActionOnRequest);
+// list all possible staff general roles
+const staffRoles = [
+   'department_head',
+   'librarian',
+   'cafeteria',
+   'dormitory',
+   'sport',
+   'student_affair',
+   'registrar'
+];
+
+// now require one of those roles
+router.put(
+   '/requests/:request_id/action',
+   authenticateToken(staffRoles),
+   approveRequest
+);
+
+router.get(
+   '/requests',
+   authenticateToken(staffRoles),
+   getPendingRequests
+);
 
 module.exports = router;

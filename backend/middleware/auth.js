@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const pool = require('../config/db'); // Import the MySQL connection pool
+const pool = require('../config/db');
 require('dotenv').config();
 
 const authenticateToken = (requiredRoles = []) => {
@@ -20,15 +20,26 @@ const authenticateToken = (requiredRoles = []) => {
       req.user = decoded;
 
       if (requiredRoles.length > 0) {
+        // Fetch roles from roles table
         const [rows] = await pool.query(
           'SELECT general_role, specific_role FROM roles WHERE user_id = ?',
           [decoded.user_id]
         );
-        console.log('User Roles:', rows);
-        const userRoles = rows.map(row => ({
+        console.log('User Roles from roles table:', rows);
+        let userRoles = rows.map(row => ({
           general_role: row.general_role,
           specific_role: row.specific_role,
         }));
+
+        // Check if user is in students table
+        const [students] = await pool.query(
+          'SELECT student_id FROM students WHERE user_id = ?',
+          [decoded.user_id]
+        );
+        if (students.length > 0 && !userRoles.some(r => r.general_role === 'student')) {
+          userRoles.push({ general_role: 'student', specific_role: null });
+        }
+        console.log('Final User Roles:', userRoles);
 
         const hasRequiredRole = userRoles.some(role =>
           requiredRoles.includes(role.general_role) ||
@@ -36,6 +47,7 @@ const authenticateToken = (requiredRoles = []) => {
         );
 
         if (!hasRequiredRole) {
+          console.log(`Insufficient permissions: required ${requiredRoles}, found ${JSON.stringify(userRoles)}`);
           return res.status(403).json({ error: 'Insufficient permissions' });
         }
       }
