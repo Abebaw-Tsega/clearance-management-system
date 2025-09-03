@@ -20,6 +20,11 @@ const authenticateToken = (requiredRoles = []) => {
       req.user = decoded;
 
       if (requiredRoles.length > 0) {
+        // In authenticateToken, add 'admin' to allowed roles wherever department_head, librarian, cafeteria, dormitory, sport, student_affair, registrar are required
+        if (requiredRoles.includes('department_head') || requiredRoles.includes('librarian') || requiredRoles.includes('cafeteria') || requiredRoles.includes('dormitory') || requiredRoles.includes('sport') || requiredRoles.includes('student_affair') || requiredRoles.includes('registrar')) {
+          requiredRoles.push('admin');
+        }
+
         // Fetch roles from roles table
         const [rows] = await pool.query(
           'SELECT general_role, specific_role FROM roles WHERE user_id = ?',
@@ -39,7 +44,7 @@ const authenticateToken = (requiredRoles = []) => {
         if (students.length > 0 && !userRoles.some(r => r.general_role === 'student')) {
           userRoles.push({ general_role: 'student', specific_role: null });
         }
-        console.log('Final User Roles:', userRoles);
+        // console.log('Final User Roles:', userRoles);
 
         const hasRequiredRole = userRoles.some(role =>
           requiredRoles.includes(role.general_role) ||

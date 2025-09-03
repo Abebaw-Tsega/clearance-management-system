@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
+const axios = require('axios');
 
 const loginRoutes = require('./routes/loginRoute');
 const studentRoutes = require('./routes/studentRoute');
@@ -11,7 +12,12 @@ const bcrypt = require('bcrypt');
 console.log(bcrypt.hashSync('password123', 10));
 console.log('JWT_SECRET:', process.env.JWT_SECRET);
 
-
+const instance = axios.create({
+  baseURL: 'http://localhost:3000/api', // Use backend port
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
 
 const app = express();
 
