@@ -140,9 +140,11 @@ const getPendingRequests = async (req, res) => {
         s.id_no,
         d.department_name AS department,
         s.study_level,
+        s.year_of_study,
         ct.type_name AS clearance_type,
         ca.status,
-        ca.comments
+        ca.comments,
+        cr.created_at
       FROM clearance_requests cr
       JOIN clearance_types ct ON cr.clearance_type_id = ct.clearance_type_id
       JOIN clearance_approval ca ON cr.request_id = ca.request_id
@@ -159,8 +161,8 @@ const getPendingRequests = async (req, res) => {
     if (role === 'sport') {
       query = `
         SELECT cr.request_id, s.student_id, u.first_name, u.last_name, u.email,
-               s.id_no, d.department_name AS department, s.study_level,
-               ct.type_name AS clearance_type, ca.status, ca.comments
+               s.id_no, d.department_name AS department, s.study_level, s.year_of_study,
+               ct.type_name AS clearance_type, ca.status, ca.comments, cr.created_at
         FROM clearance_requests cr
         JOIN clearance_types ct ON cr.clearance_type_id = ct.clearance_type_id
         JOIN clearance_approval ca ON cr.request_id = ca.request_id
@@ -186,8 +188,8 @@ const getPendingRequests = async (req, res) => {
     } else if (role === 'student_affair') {
       query = `
         SELECT cr.request_id, s.student_id, u.first_name, u.last_name, u.email,
-               s.id_no, d.department_name AS department, s.study_level,
-               ct.type_name AS clearance_type, ca.status, ca.comments
+               s.id_no, d.department_name AS department, s.study_level, s.year_of_study,
+               ct.type_name AS clearance_type, ca.status, ca.comments, cr.created_at
         FROM clearance_requests cr
         JOIN clearance_types ct ON cr.clearance_type_id = ct.clearance_type_id
         JOIN clearance_approval ca ON cr.request_id = ca.request_id
@@ -209,8 +211,8 @@ const getPendingRequests = async (req, res) => {
     } else if (role === 'registrar') {
       query = `
         SELECT cr.request_id, s.student_id, u.first_name, u.last_name, u.email,
-               s.id_no, d.department_name AS department, s.study_level,
-               ct.type_name AS clearance_type, ca.status, ca.comments
+               s.id_no, d.department_name AS department, s.study_level, s.year_of_study,
+               ct.type_name AS clearance_type, ca.status, ca.comments, cr.created_at
         FROM clearance_requests cr
         JOIN clearance_types ct ON cr.clearance_type_id = ct.clearance_type_id
         JOIN clearance_approval ca ON cr.request_id = ca.request_id
@@ -252,4 +254,25 @@ const getPendingRequests = async (req, res) => {
   }
 };
 
-module.exports = { approveRequest, getPendingRequests };
+// Staff profile endpoint
+const getStaffProfile = async (req, res) => {
+  const user_id = req.user.user_id;
+  try {
+    const [staff] = await pool.query(`
+      SELECT u.first_name, u.last_name, u.email, u.phone, u.gender, r.general_role, r.specific_role, d.department_name, u.created_at
+      FROM users u
+      JOIN roles r ON u.user_id = r.user_id
+      LEFT JOIN departments d ON r.specific_role = d.department_name
+      WHERE u.user_id = ?
+      LIMIT 1
+    `, [user_id]);
+    if (staff.length === 0) {
+      return res.status(404).json({ error: 'Staff not found' });
+    }
+    res.status(200).json(staff[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Server error' });
+  }
+};
+
+module.exports = { approveRequest, getPendingRequests, getStaffProfile };

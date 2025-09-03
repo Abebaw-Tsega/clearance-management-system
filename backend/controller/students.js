@@ -132,4 +132,29 @@ const getClearanceCertificate = async (req, res) => {
   }
 };
 
-module.exports = { submitClearanceRequest, getClearanceStatus, getClearanceCertificate };
+// Get current student profile
+const getStudentProfile = async (req, res) => {
+  const user_id = req.user.user_id;
+  try {
+    const [students] = await pool.query(`
+      SELECT s.*, u.first_name, u.last_name, u.email, d.department_name
+      FROM students s
+      JOIN users u ON s.user_id = u.user_id
+      LEFT JOIN departments d ON s.department_id = d.department_id
+      WHERE s.user_id = ?
+    `, [user_id]);
+    if (students.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    res.status(200).json(students[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Server error' });
+  }
+};
+
+module.exports = {
+  submitClearanceRequest,
+  getClearanceStatus,
+  getClearanceCertificate,
+  getStudentProfile
+};

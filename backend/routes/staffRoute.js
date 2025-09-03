@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { approveRequest, getPendingRequests } = require('../controller/staffs');
+const { approveRequest, getPendingRequests, getStaffProfile } = require('../controller/staffs');
 const { authenticateToken } = require('../middleware/auth');
 
 // list all possible staff general roles
@@ -25,6 +25,12 @@ router.get(
    '/requests',
    authenticateToken(staffRoles),
    getPendingRequests
+);
+
+router.get(
+   '/profile',
+   authenticateToken(staffRoles),
+   getStaffProfile
 );
 
 module.exports = router;
