@@ -1,3 +1,4 @@
+// backend/controller/staffs.js
 const pool = require('../config/db');
 
 const approveRequest = async (req, res) => {
@@ -88,20 +89,59 @@ const approveRequest = async (req, res) => {
             'SELECT user_id FROM roles WHERE general_role = "sport" AND specific_role IS NULL LIMIT 1'
           );
           if (sport.length === 0) throw new Error('No sport staff found');
-          await pool.query('INSERT INTO clearance_approval (request_id, user_id, status) VALUES (?, ?, "pending")', [request_id, sport[0].user_id]);
+
+          // Check if sport approval already exists
+          const [existingSportApproval] = await pool.query(
+            'SELECT approval_id FROM clearance_approval WHERE request_id = ? AND user_id = ?',
+            [request_id, sport[0].user_id]
+          );
+
+          // Only create if it doesn't exist
+          if (existingSportApproval.length === 0) {
+            await pool.query(
+              'INSERT INTO clearance_approval (request_id, user_id, status) VALUES (?, ?, "pending")',
+              [request_id, sport[0].user_id]
+            );
+          }
         }
       } else if (role === 'sport') {
         const [studentAffair] = await pool.query(
           'SELECT user_id FROM roles WHERE general_role = "student_affair" AND specific_role IS NULL LIMIT 1'
         );
         if (studentAffair.length === 0) throw new Error('No student_affair staff found');
-        await pool.query('INSERT INTO clearance_approval (request_id, user_id, status) VALUES (?, ?, "pending")', [request_id, studentAffair[0].user_id]);
+
+        // Check if student affair approval already exists
+        const [existingStudentAffairApproval] = await pool.query(
+          'SELECT approval_id FROM clearance_approval WHERE request_id = ? AND user_id = ?',
+          [request_id, studentAffair[0].user_id]
+        );
+
+        // Only create if it doesn't exist
+        if (existingStudentAffairApproval.length === 0) {
+          await pool.query(
+            'INSERT INTO clearance_approval (request_id, user_id, status) VALUES (?, ?, "pending")',
+            [request_id, studentAffair[0].user_id]
+          );
+        }
       } else if (role === 'student_affair') {
         const [registrar] = await pool.query(
           'SELECT user_id FROM roles WHERE general_role = "registrar" AND specific_role IS NULL LIMIT 1'
         );
         if (registrar.length === 0) throw new Error('No registrar found');
-        await pool.query('INSERT INTO clearance_approval (request_id, user_id, status) VALUES (?, ?, "pending")', [request_id, registrar[0].user_id]);
+
+        // Check if registrar approval already exists
+        const [existingRegistrarApproval] = await pool.query(
+          'SELECT approval_id FROM clearance_approval WHERE request_id = ? AND user_id = ?',
+          [request_id, registrar[0].user_id]
+        );
+
+        // Only create if it doesn't exist
+        if (existingRegistrarApproval.length === 0) {
+          await pool.query(
+            'INSERT INTO clearance_approval (request_id, user_id, status) VALUES (?, ?, "pending")',
+            [request_id, registrar[0].user_id]
+          );
+        }
       }
 
       await pool.query('COMMIT');
@@ -138,6 +178,7 @@ const getPendingRequests = async (req, res) => {
         u.last_name,
         u.email,
         s.id_no,
+        s.room_no,
         d.department_name AS department,
         s.study_level,
         s.year_of_study,
@@ -259,7 +300,7 @@ const getStaffProfile = async (req, res) => {
   const user_id = req.user.user_id;
   try {
     const [staff] = await pool.query(`
-      SELECT u.first_name, u.last_name, u.email, u.phone, u.gender, r.general_role, r.specific_role, d.department_name, u.created_at
+      SELECT u.first_name, u.last_name, u.email, u.phone, r.general_role, r.specific_role, d.department_name, u.created_at
       FROM users u
       JOIN roles r ON u.user_id = r.user_id
       LEFT JOIN departments d ON r.specific_role = d.department_name

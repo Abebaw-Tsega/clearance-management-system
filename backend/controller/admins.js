@@ -125,7 +125,7 @@ const toggleClearanceSystem = async (req, res) => {
 const getClearanceSystem = async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT cs.is_active, ct.type_name AS reason,
+      SELECT cs.is_active, ct.clearance_type_id, ct.type_name AS reason,
              DATE_FORMAT(cs.start_time, '%Y-%m-%d') AS startDate,
              DATE_FORMAT(cs.start_time, '%H:%i') AS startTime,
              DATE_FORMAT(cs.end_time, '%Y-%m-%d') AS endDate,
@@ -185,10 +185,30 @@ const getAllStudents = async (req, res) => {
   }
 };
 
+const getAdminProfile = async (req, res) => {
+  const user_id = req.user.user_id;
+  try {
+    const [admin] = await pool.query(`
+      SELECT u.first_name, u.last_name, u.email, u.phone, r.general_role
+      FROM users u
+      JOIN roles r ON u.user_id = r.user_id
+      WHERE u.user_id = ? AND r.general_role = 'admin'
+      LIMIT 1
+    `, [user_id]);
+    if (admin.length === 0) {
+      return res.status(404).json({ error: 'Admin not found' });
+    }
+    res.status(200).json(admin[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Server error' });
+  }
+};
+
 module.exports = {
   getAllClearanceData,
   toggleClearanceSystem,
   assignRole,
+  getAdminProfile,
   getClearanceSystem,
   getAllStudents,
   getClearanceTypes,

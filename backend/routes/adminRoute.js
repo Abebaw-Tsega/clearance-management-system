@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
-const { getAllClearanceData, toggleClearanceSystem, assignRole, getAllStudents, getClearanceTypes, getRecentRequests, updateSystemControl, getClearanceSystem } = require('../controller/admins');
+const { getAllClearanceData, toggleClearanceSystem, assignRole, getAllStudents, getClearanceTypes, getRecentRequests, updateSystemControl, getClearanceSystem, getAdminProfile } = require('../controller/admins');
 
 router.get('/data', authenticateToken(['admin', 'superadmin']), getAllClearanceData);
 router.put('/system', authenticateToken(['admin']), toggleClearanceSystem);
@@ -10,7 +10,8 @@ router.get('/students', authenticateToken(['admin', 'superadmin']), getAllStuden
 router.get('/clearance-types', authenticateToken(['admin', 'superadmin']), getClearanceTypes);
 router.get('/recent-requests', authenticateToken(['admin', 'superadmin']), getRecentRequests);
 router.put('/system-control', authenticateToken(['admin']), updateSystemControl);
-router.get('/system', authenticateToken(['admin', 'superadmin']), getClearanceSystem);
+router.get('/system', authenticateToken(['admin', 'superadmin','student']), getClearanceSystem);
+router.get('/profile', authenticateToken(['admin', 'superadmin']), getAdminProfile);
 
 
 module.exports = router;

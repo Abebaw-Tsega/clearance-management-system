@@ -6,7 +6,10 @@ const submitClearanceRequest = async (req, res) => {
 
   try {
     // Verify student
-    const [students] = await pool.query('SELECT student_id, department_id, block_id, study_level FROM students WHERE user_id = ?', [user_id]);
+    const [students] = await pool.query(
+      'SELECT student_id, department_id, block_id, study_level FROM students WHERE user_id = ?',
+      [user_id]
+    );
     if (students.length === 0) {
       console.log(`No student found for user_id: ${user_id}`);
       return res.status(403).json({ error: 'User is not a student' });
@@ -14,7 +17,10 @@ const submitClearanceRequest = async (req, res) => {
     const student = students[0];
 
     // Verify clearance type
-    const [clearanceTypes] = await pool.query('SELECT clearance_type_id FROM clearance_types WHERE clearance_type_id = ?', [clearance_type_id]);
+    const [clearanceTypes] = await pool.query(
+      'SELECT clearance_type_id FROM clearance_types WHERE clearance_type_id = ?',
+      [clearance_type_id]
+    );
     if (clearanceTypes.length === 0) {
       return res.status(400).json({ error: 'Invalid clearance type' });
     }
@@ -28,14 +34,22 @@ const submitClearanceRequest = async (req, res) => {
       return res.status(400).json({ error: 'Clearance system is closed for this type' });
     }
 
+    // Check for existing request
+    const [existingRequest] = await pool.query(
+      'SELECT 1 FROM clearance_requests WHERE student_id = ? AND clearance_type_id = ?',
+      [student.student_id, clearance_type_id]
+    );
+    if (existingRequest.length > 0) {
+      return res.status(400).json({ error: 'You have already submitted a clearance request for this schedule.' });
+    }
+
     // Insert clearance request
+    await pool.query('START TRANSACTION');
     const [result] = await pool.query(
-      'INSERT INTO clearance_requests (student_id, clearance_type_id) VALUES (?, ?)',
+      'INSERT INTO clearance_requests (student_id, clearance_type_id, created_at) VALUES (?, ?, NOW())',
       [student.student_id, clearance_type_id]
     );
     const request_id = result.insertId;
-
-    await pool.query('START TRANSACTION');
 
     // Phase 1: Department Head
     const [deptHead] = await pool.query(
@@ -43,30 +57,42 @@ const submitClearanceRequest = async (req, res) => {
       [student.department_id]
     );
     if (deptHead.length === 0) throw new Error('No department_head found for department_id: ' + student.department_id);
-    await pool.query('INSERT INTO clearance_approval (request_id, user_id, status) VALUES (?, ?, "pending")', [request_id, deptHead[0].user_id]);
+    await pool.query(
+      'INSERT INTO clearance_approval (request_id, user_id, status, updated_at) VALUES (?, ?, "pending", NOW())',
+      [request_id, deptHead[0].user_id]
+    );
 
     // Librarian
     const [librarian] = await pool.query(
       'SELECT user_id FROM roles WHERE general_role = "librarian" AND specific_role IS NULL LIMIT 1'
     );
     if (librarian.length === 0) throw new Error('No librarian found');
-    await pool.query('INSERT INTO clearance_approval (request_id, user_id, status) VALUES (?, ?, "pending")', [request_id, librarian[0].user_id]);
+    await pool.query(
+      'INSERT INTO clearance_approval (request_id, user_id, status, updated_at) VALUES (?, ?, "pending", NOW())',
+      [request_id, librarian[0].user_id]
+    );
 
     // Cafeteria
     const [cafeteria] = await pool.query(
       'SELECT user_id FROM roles WHERE general_role = "cafeteria" AND specific_role IS NULL LIMIT 1'
     );
     if (cafeteria.length === 0) throw new Error('No cafeteria staff found');
-    await pool.query('INSERT INTO clearance_approval (request_id, user_id, status) VALUES (?, ?, "pending")', [request_id, cafeteria[0].user_id]);
+    await pool.query(
+      'INSERT INTO clearance_approval (request_id, user_id, status, updated_at) VALUES (?, ?, "pending", NOW())',
+      [request_id, cafeteria[0].user_id]
+    );
 
-    // Dormitory (skip for PhD)
+    // Dormitory (only for non-PhD students)
     if (student.study_level !== 'phd') {
       const [dormitory] = await pool.query(
         'SELECT r.user_id FROM roles r JOIN blocks b ON r.specific_role = b.block_no WHERE r.general_role = "dormitory" AND b.block_id = ? LIMIT 1',
         [student.block_id]
       );
       if (dormitory.length === 0) throw new Error('No dormitory staff found for block_id: ' + student.block_id);
-      await pool.query('INSERT INTO clearance_approval (request_id, user_id, status) VALUES (?, ?, "pending")', [request_id, dormitory[0].user_id]);
+      await pool.query(
+        'INSERT INTO clearance_approval (request_id, user_id, status, updated_at) VALUES (?, ?, "pending", NOW())',
+        [request_id, dormitory[0].user_id]
+      );
     }
 
     await pool.query('COMMIT');
@@ -83,21 +109,46 @@ const getClearanceStatus = async (req, res) => {
   const user_id = req.user.user_id;
 
   try {
-    const [students] = await pool.query('SELECT student_id FROM students WHERE user_id = ?', [user_id]);
+    const [students] = await pool.query(
+      'SELECT student_id, study_level, id_no FROM students WHERE user_id = ?',
+      [user_id]
+    );
     if (students.length === 0) {
       console.log(`No student found for user_id: ${user_id}`);
       return res.status(403).json({ error: 'User is not a student' });
     }
+    const student = students[0];
 
     const [rows] = await pool.query(
-      'SELECT request_id, student_id, clearance_type, total_approvals, approved_count, rejected_count, overall_status, ' +
-      'department_head_status, librarian_status, cafeteria_status, dormitory_status, sport_status, ' +
-      'student_affair_status, registrar_status ' +
-      'FROM clearance_request_status WHERE student_id = ?',
-      [students[0].student_id]
+      'SELECT crs.request_id, crs.student_id, crs.clearance_type, crs.total_approvals, crs.approved_count, ' +
+      'crs.rejected_count, crs.overall_status, crs.department_head_status, crs.librarian_status, ' +
+      'crs.cafeteria_status, crs.dormitory_status, crs.sport_status, crs.student_affair_status, ' +
+      'crs.registrar_status, c.created_at AS certificate_created_at, s.id_no, s.study_level ' +
+      'FROM clearance_request_status crs ' +
+      'LEFT JOIN certificates c ON crs.request_id = c.request_id AND crs.student_id = c.student_id ' +
+      'LEFT JOIN students s ON crs.student_id = s.student_id ' +
+      'WHERE crs.student_id = ?',
+      [student.student_id]
     );
 
-    res.status(200).json(rows);
+    // For PhD students, set dormitory_status to 'skipped' if null
+    const processedRequests = rows.map(req => ({
+      ...req,
+      id: req.request_id, // Ensure 'id' is included for frontend
+      dormitory_status: student.study_level === 'phd' && !req.dormitory_status ? 'skipped' : req.dormitory_status,
+      departments: [
+        { name: 'Department Head', status: req.department_head_status || 'pending' },
+        { name: 'Librarian', status: req.librarian_status || 'pending' },
+        { name: 'Cafeteria', status: req.cafeteria_status || 'pending' },
+        ...(student.study_level === 'phd' ? [] : [{ name: 'Dormitory', status: req.dormitory_status || 'skipped' }]),
+        { name: 'Sport', status: req.sport_status || 'pending' },
+        { name: 'Student Affair', status: req.student_affair_status || 'pending' },
+        { name: 'Registrar', status: req.registrar_status || 'pending' }
+      ]
+    }));
+
+    console.log('Clearance status response:', processedRequests);
+    res.status(200).json(processedRequests);
   } catch (error) {
     console.error('Get clearance status error:', error.message);
     res.status(500).json({ error: error.message || 'Server error' });
