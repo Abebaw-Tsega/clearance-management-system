@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 const axios = require('axios');
 
@@ -13,7 +15,7 @@ console.log(bcrypt.hashSync('password123', 10));
 console.log('JWT_SECRET:', process.env.JWT_SECRET);
 
 const instance = axios.create({
-  baseURL: 'http://localhost:3000/api', // Use backend port
+  baseURL: 'http://localhost:3000/api',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -24,6 +26,12 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Create Uploads directory if it doesn't exist
+const uploadDir = path.join(__dirname, 'Uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
 // Routes
 app.use('/api', loginRoutes);
