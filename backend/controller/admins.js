@@ -180,54 +180,130 @@ const getClearanceSystem = async (req, res) => {
   }
 };
 
-const assignRole = async (req, res) => {
-  const { email, general_role, specific_role, password } = req.body;
+
+const getRoles = async (req, res) => {
   try {
-    // Check if user exists, or create a new one
-    let [user] = await pool.query('SELECT user_id FROM users WHERE email = ?', [email]);
-    let user_id;
-
-    if (!user) {
-      if (!password) {
-        return res.status(400).json({ error: 'Password required for new user' });
-      }
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const [result] = await pool.query(
-        'INSERT INTO users (email, password, first_name, last_name, is_active) VALUES (?, ?, ?, ?, ?)',
-        [email, hashedPassword, email.split('@')[0], 'Admin', true]
-      );
-      user_id = result.insertId;
-    } else {
-      user_id = user.user_id;
-    }
-
-    // Remove existing 'admin' role from other users if assigning new admin
-    if (general_role === 'admin') {
-      await pool.query(
-        'UPDATE users u JOIN roles r ON u.user_id = r.user_id SET u.is_active = FALSE WHERE r.general_role = ?',
-        ['admin']
-      );
-    }
-
-    // Assign or update role
-    await pool.query(
-      'INSERT INTO roles (user_id, general_role, specific_role) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE general_role = ?, specific_role = ?',
-      [user_id, general_role, specific_role || null, general_role, specific_role || null]
+    const [roles] = await pool.query(
+      'SELECT r.user_id, r.general_role, r.specific_role FROM roles r WHERE r.general_role != ?',
+      ['student']
     );
-
-    // Update user active status
-    await pool.query('UPDATE users SET is_active = TRUE WHERE user_id = ?', [user_id]);
-
-    const [newAdmin] = await pool.query(
-      'SELECT u.user_id, u.first_name, u.last_name, u.email,  r.general_role, u.is_active FROM users u JOIN roles r ON u.user_id = r.user_id WHERE u.user_id = ?',
-      [user_id]
-    );
-    res.json({ message: 'Role assigned successfully', user: newAdmin });
+    console.log('Fetched roles:', roles);
+    res.json(roles);
   } catch (err) {
-    console.error('Error assigning role:', err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error fetching roles:', err.message, err.stack);
+    res.status(500).json({ error: `Server error: ${err.message}` });
   }
 };
+
+const assignRole = async (req, res) => {
+  const { user_id, email, general_role, specific_role, password } = req.body;
+  console.log('Assign role request:', { user_id, email, general_role, specific_role });
+  try {
+    let target_user_id = user_id;
+    if (email) {
+      let [user] = await pool.query('SELECT user_id FROM users WHERE email = ?', [email]);
+      console.log('User lookup by email:', { email, user });
+      if (!user) {
+        if (!password) {
+          console.log('Password missing for new user');
+          return res.status(400).json({ error: 'Password required for new user' });
+        }
+        const hashedPassword = await bcrypt.hash(password, 10);
+        try {
+          const [result] = await pool.query(
+            'INSERT INTO users (email, password, first_name, last_name, is_active) VALUES (?, ?, ?, ?, ?)',
+            [email, hashedPassword, email.split('@')[0], 'Admin', true]
+          );
+          target_user_id = result.insertId;
+          console.log('Created new user with user_id:', target_user_id);
+        } catch (err) {
+          console.error('Error creating user:', err.message);
+          return res.status(500).json({ error: `Failed to create user: ${err.message}` });
+        }
+      } else {
+        target_user_id = user.user_id;
+        console.log('Found existing user with user_id:', target_user_id);
+      }
+      if (general_role === 'admin') {
+        console.log('Deactivating existing admins except user_id:', target_user_id);
+        await pool.query(
+          'UPDATE users u JOIN roles r ON u.user_id = r.user_id SET u.is_active = FALSE WHERE r.general_role = ? AND u.user_id != ?',
+          ['admin', target_user_id]
+        );
+      }
+    }
+
+    if (!target_user_id) {
+      console.log('No target_user_id provided');
+      return res.status(400).json({ error: 'User ID or email required' });
+    }
+
+    // Verify user_id exists
+    const [userCheck] = await pool.query('SELECT user_id FROM users WHERE user_id = ?', [target_user_id]);
+    console.log('User ID validation:', { user_id: target_user_id, userCheck });
+    if (!userCheck.length) {
+      return res.status(400).json({ error: `Invalid user ID: ${target_user_id}` });
+    }
+
+    // Validate specific_role for department_head and dormitory
+    if (general_role === 'department_head' && specific_role) {
+      const [dept] = await pool.query('SELECT department_id FROM department WHERE department_name = ?', [specific_role]);
+      console.log('Department validation:', { specific_role, dept });
+      if (!dept) {
+        return res.status(400).json({ error: `Invalid department: ${specific_role}` });
+      }
+    } else if (general_role === 'dormitory' && specific_role) {
+      const [block] = await pool.query('SELECT block_id FROM blocks WHERE block_no = ?', [specific_role]);
+      console.log('Block validation:', { specific_role, block });
+      if (!block) {
+        return res.status(400).json({ error: `Invalid block: ${specific_role}` });
+      }
+    } else if (general_role !== 'department_head' && general_role !== 'dormitory' && specific_role) {
+      console.log('Specific role not allowed for general_role:', general_role);
+      return res.status(400).json({ error: 'Specific role not allowed for this general role' });
+    }
+
+    // Ensure roles table has a unique constraint
+    try {
+      console.log('Inserting/updating role for user_id:', target_user_id);
+      await pool.query(
+        'INSERT INTO roles (user_id, general_role, specific_role) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE general_role = ?, specific_role = ?',
+        [target_user_id, general_role, specific_role || null, general_role, specific_role || null]
+      );
+    } catch (err) {
+      console.error('Error inserting role:', err.message);
+      return res.status(500).json({ error: `Failed to insert role: ${err.message}` });
+    }
+
+    // Update user active status
+    console.log('Updating user active status for user_id:', target_user_id);
+    await pool.query('UPDATE users SET is_active = TRUE WHERE user_id = ?', [target_user_id]);
+
+    const [userData] = await pool.query(
+      'SELECT u.user_id, u.first_name, u.last_name, u.email, r.general_role, r.specific_role, u.is_active FROM users u JOIN roles r ON u.user_id = r.user_id WHERE u.user_id = ?',
+      [target_user_id]
+    );
+    console.log('Role assigned, returning user data:', userData);
+    res.json({ message: 'Role assigned successfully', user: userData });
+  } catch (err) {
+    console.error('Error assigning role:', err.message, err.stack);
+    res.status(500).json({ error: `Server error: ${err.message}` });
+  }
+};
+
+const removeRole = async (req, res) => {
+  const { user_id } = req.params;
+  console.log('Remove role request for user_id:', user_id);
+  try {
+    await pool.query('DELETE FROM roles WHERE user_id = ? AND general_role != ?', [user_id, 'student']);
+    res.json({ message: 'Role removed successfully' });
+  } catch (err) {
+    console.error('Error removing role:', err.message, err.stack);
+    res.status(500).json({ error: `Server error: ${err.message}` });
+  }
+};
+
+module.exports = { assignRole, getRoles, removeRole, /* other exports */ };
 
 const getAllStudents = async (req, res) => {
   try {
@@ -469,9 +545,9 @@ const importStudents = async (req, res) => {
 
 const getRegistrarProfile = async (req, res) => {
   try {
-    const [admin] = await pool.query(
+    const [admins] = await pool.query(
       `
-      SELECT u.user_id, u.first_name, u.last_name, u.email,  r.general_role, u.is_active
+      SELECT u.user_id, u.first_name, u.last_name, u.email, r.general_role, u.is_active
       FROM users u
       JOIN roles r ON u.user_id = r.user_id
       WHERE r.general_role = 'admin' AND u.is_active = TRUE
@@ -479,10 +555,11 @@ const getRegistrarProfile = async (req, res) => {
     `,
       []
     );
-    if (!admin) {
+    console.log('Registrar admin query result:', admins);
+    if (!admins || admins.length === 0) {
       return res.status(404).json({ error: 'No active registrar admin found' });
     }
-    res.json(admin);
+    res.json(admins); // Return single object, not array
   } catch (err) {
     console.error('Error fetching registrar admin:', err);
     res.status(500).json({ error: 'Server error' });
@@ -499,6 +576,28 @@ const toggleAdminStatus = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
+const getDepartments = async (req, res) => {
+  try {
+    const [departments] = await pool.query('SELECT department_id, department_name FROM departments');
+    console.log('Departments query result:', departments);
+    res.json(departments);
+  } catch (err) {
+    console.error('Error fetching departments:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const getBlocks = async (req, res) => {
+  try {
+    const [blocks] = await pool.query('SELECT block_id, block_no FROM blocks');
+    console.log('Blocks query result:', blocks);
+    res.json(blocks);
+  } catch (err) {
+    console.error('Error fetching blocks:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
 
 
 module.exports = {
@@ -514,4 +613,8 @@ module.exports = {
   importStudents,
   getRegistrarProfile,
   toggleAdminStatus,
+  getDepartments,
+  getBlocks,
+  removeRole,
+  getRoles,
 };

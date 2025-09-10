@@ -14,6 +14,10 @@ const {
    importStudents,
    getRegistrarProfile,
    toggleAdminStatus,
+   getDepartments,
+   getBlocks,
+   removeRole,
+   getRoles,
 } = require('../controller/admins');
 const multer = require('multer');
 
@@ -49,5 +53,9 @@ router.get('/profile', authenticateToken(['admin', 'superadmin']), getAdminProfi
 router.post('/import-students', authenticateToken(['admin', 'superadmin']), upload.single('csvFile'), importStudents); // Updated roles
 router.get('/registrar-profile', authenticateToken(['superadmin']), getRegistrarProfile); // New route for registrar profile
 router.put('/roles/:user_id', authenticateToken(['superadmin']), toggleAdminStatus); // New route to activate/deactivate admin accounts
+router.get('/departments', authenticateToken(['superadmin']), getDepartments);
+router.get('/blocks', authenticateToken(['superadmin']), getBlocks);
+router.delete('/roles/:user_id', authenticateToken(['superadmin']), removeRole); // New route to remove staff role
+router.get('/roles', authenticateToken(['superadmin']), getRoles); // New route to get all roles
 
 module.exports = router;
