@@ -1,0 +1,4 @@
+first_name,last_name,email,id_no,department_name,study_level,year_of_study,block_no,room_no
+John,Doe,john.doe@example.com,ETS0345/15,Computer Science,undergraduate,1,Block 2,B2 101
+Jane,Smith,jane.smith@example.com,ETS0233/13,Electrical Engineering,masters,2,Block 1,B1 201
+Alice,Johnson,alice.johnson@example.com,ETS0233/16,Electrical Engineering, phd,1,,
