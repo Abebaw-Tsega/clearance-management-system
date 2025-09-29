@@ -18,6 +18,8 @@ const {
    getBlocks,
    removeRole,
    getRoles,
+   updateClearanceFlow,
+   getClearanceFlow,
 } = require('../controller/admins');
 const multer = require('multer');
 
@@ -57,5 +59,8 @@ router.get('/departments', authenticateToken(['superadmin']), getDepartments);
 router.get('/blocks', authenticateToken(['superadmin']), getBlocks);
 router.delete('/roles/:user_id', authenticateToken(['superadmin']), removeRole); // New route to remove staff role
 router.get('/roles', authenticateToken(['superadmin']), getRoles); // New route to get all roles
+router.get('/clearance-flow', authenticateToken(['superadmin','admin']), getClearanceFlow); // New route to fetch clearance flow
+router.put('/clearance-flow', authenticateToken(['superadmin','admin']), updateClearanceFlow); // New route to update clearance flow
+
 
 module.exports = router;

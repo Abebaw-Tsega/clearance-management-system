@@ -247,7 +247,7 @@ const assignRole = async (req, res) => {
 
     // Validate specific_role for department_head and dormitory
     if (general_role === 'department_head' && specific_role) {
-      const [dept] = await pool.query('SELECT department_id FROM department WHERE department_name = ?', [specific_role]);
+      const [dept] = await pool.query('SELECT department_id FROM departments WHERE department_name = ?', [specific_role]);
       console.log('Department validation:', { specific_role, dept });
       if (!dept) {
         return res.status(400).json({ error: `Invalid department: ${specific_role}` });
@@ -303,7 +303,6 @@ const removeRole = async (req, res) => {
   }
 };
 
-module.exports = { assignRole, getRoles, removeRole, /* other exports */ };
 
 const getAllStudents = async (req, res) => {
   try {
@@ -482,7 +481,7 @@ const importStudents = async (req, res) => {
           }
 
           // Insert user
-          const password = row.password || "defaultPassword123";
+          const password = `${row.last_name}1234abcd#`; // Generate password using last_name
           const passwordHash = await hashPassword(password);
           const [userResult] = await connection.query(
             "INSERT INTO users (first_name, last_name, email, password_hash) VALUES (?, ?, ?, ?)",
@@ -598,11 +597,110 @@ const getBlocks = async (req, res) => {
   }
 };
 
+const updateClearanceFlow = async (req, res) => {
+  const { flow } = req.body; // Expected format: [{ step, general_role }, ...]
+  const user_id = req.user.user_id;
 
+  try {
+    // Verify user is admin or superadmin
+    const [roles] = await pool.query(
+      'SELECT general_role FROM roles WHERE user_id = ? AND general_role IN ("admin", "superadmin")',
+      [user_id]
+    );
+    if (roles.length === 0) {
+      return res.status(403).json({ error: 'Only admin or superadmin can update clearance flow' });
+    }
+
+    // Validate flow input
+    if (!Array.isArray(flow) || flow.length === 0) {
+      return res.status(400).json({ error: 'Flow must be a non-empty array' });
+    }
+    for (const step of flow) {
+      if (
+        !step.step ||
+        !step.general_role
+      ) {
+        return res.status(400).json({ error: 'Invalid flow format: Each step must have step and general_role' });
+      }
+      // Validate general_role exists in roles table
+      const [roleCheck] = await pool.query(
+        'SELECT 1 FROM roles WHERE general_role = ? LIMIT 1',
+        [step.general_role]
+      );
+      if (roleCheck.length === 0) {
+        return res.status(400).json({ error: `Invalid role: ${step.general_role}` });
+      }
+    }
+
+    // Validate step numbers: must start from 1 and have no gaps
+    const stepNumbers = flow.map(item => item.step);
+    const uniqueSteps = [...new Set(stepNumbers)].sort((a, b) => a - b);
+
+    // Check if starts from 1
+    if (uniqueSteps[0] !== 1) {
+      return res.status(400).json({ error: 'Step numbers must start from 1' });
+    }
+
+    // Check for gaps in step numbers
+    for (let i = 0; i < uniqueSteps.length; i++) {
+      if (uniqueSteps[i] !== i + 1) {
+        return res.status(400).json({ error: 'Step numbers must be consecutive without gaps' });
+      }
+    }
+
+    // Start transaction to update flow
+    await pool.query('START TRANSACTION');
+    try {
+      // Clear existing flow
+      await pool.query('DELETE FROM clearance_flow');
+
+      // Insert new flow
+      for (const step of flow) {
+        await pool.query(
+          'INSERT INTO clearance_flow (step, general_role) VALUES (?, ?)',
+          [step.step, step.general_role]
+        );
+      }
+
+      await pool.query('COMMIT');
+      res.status(200).json({ message: 'Clearance flow updated successfully' });
+    } catch (error) {
+      await pool.query('ROLLBACK');
+      console.error('Update clearance flow error:', error.message);
+      res.status(500).json({ error: 'Failed to update clearance flow' });
+    }
+  } catch (error) {
+    console.error('Update clearance flow error:', error.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Controller function to get current clearance flow
+const getClearanceFlow = async (req, res) => {
+  try {
+    // Fetch current clearance flow from database
+    const [flow] = await pool.query(
+      'SELECT step, general_role FROM clearance_flow ORDER BY step'
+    );
+
+    res.status(200).json({
+      success: true,
+      flow: flow
+    });
+  } catch (error) {
+    console.error('Get clearance flow error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch clearance flow'
+    });
+  }
+};
 
 module.exports = {
   getAllClearanceData,
   toggleClearanceSystem,
+  updateClearanceFlow,
+  getClearanceFlow,
   assignRole,
   getAdminProfile,
   getClearanceSystem,

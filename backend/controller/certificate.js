@@ -156,6 +156,26 @@ async function generateCertificate(req, res) {
       });
       doc.moveDown(1.5);
 
+      // Add stamp image above date and signature
+      const stampPath = path.join(__dirname, '../public', 'stamp.png');
+      if (fs.existsSync(stampPath)) {
+         const stampWidth = 80;
+         const stampHeight = 80;
+         const stampX = 400; // Right side of the page
+         const stampY = doc.y; // Current Y position
+
+         doc.image(stampPath, stampX, stampY, {
+            width: stampWidth,
+            height: stampHeight
+         });
+
+         // Move cursor down to account for stamp height plus some padding
+         doc.y = stampY + stampHeight + 10;
+      } else {
+         console.warn('Stamp file not found at:', stampPath);
+         // Continue without stamp
+      }
+
       // Issue date and signature placeholder
       doc.text(`Date Issued: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, { align: 'left' });
       doc.moveDown(1);
